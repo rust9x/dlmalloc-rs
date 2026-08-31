@@ -1,3 +1,5 @@
+extern crate std;
+
 use crate::Allocator;
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -63,26 +65,35 @@ unsafe impl Allocator for System {
     }
 }
 
-// NB: `SRWLOCK_INIT` doesn't appear to be in `windows-sys`
 #[cfg(feature = "global")]
-static mut LOCK: SRWLOCK = SRWLOCK {
-    Ptr: ptr::null_mut(),
-};
+static mut LOCK: CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
     unsafe {
-        AcquireSRWLockExclusive(ptr::addr_of_mut!(LOCK));
+        EnterCriticalSection(&raw mut LOCK);
     }
 }
 
 #[cfg(feature = "global")]
 pub fn release_global_lock() {
     unsafe {
-        ReleaseSRWLockExclusive(ptr::addr_of_mut!(LOCK));
+        LeaveCriticalSection(&raw mut LOCK);
     }
 }
 
 /// Not needed on Windows
 #[cfg(feature = "global")]
 pub unsafe fn enable_alloc_after_fork() {}
+
+#[cfg(feature = "global")]
+#[used]
+#[unsafe(link_section = ".CRT$XCT")]
+static INIT_TABLE_ENTRY: unsafe extern "C" fn() = init_crit_section;
+
+#[cfg(feature = "global")]
+unsafe extern "C" fn init_crit_section() {
+    unsafe {
+        InitializeCriticalSection(&raw mut LOCK);
+    }
+}
